@@ -1,0 +1,16 @@
+The NineML native interpreter and code generation toolkit is being 
+developed in the Chicken Scheme extension repository.
+
+Its source code can be fetched as follows:
+
+ $ svn co https://code.call-cc.org/svn/chicken-eggs/release/4/9ML-toolkit/trunk 9ML-toolkit
+
+Its source code can be browsed via the Chicken Scheme Trac instance:
+
+http://bugs.call-cc.org/browser/release/4/9ML-toolkit/trunk
+
+Installation can be performed via the chicken-install tool from the 
+Chicken Scheme distribution:
+
+  $ chicken-install 9ML-toolkit
+
