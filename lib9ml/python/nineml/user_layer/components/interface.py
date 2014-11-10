@@ -6,6 +6,7 @@ from ..base import BaseULObject, E, NINEML
 from ..utility import check_tag
 from ..random import RandomDistribution
 from .base import BaseComponent, Reference
+from ...abstraction_layer import Unit
 
 
 class Property(BaseULObject):
@@ -77,23 +78,22 @@ class Quantity(object):
     element_name = "Quantity"
 
     def __init__(self, value, units):
-        if not (isinstance(value, float) or isinstance(value, Reference) or
-                isinstance(value, BaseComponent)):
+        if not isinstance(value, (int, float, Reference, BaseComponent)):
             raise Exception("Invalid type '{}' for value, can be one of "
                             "'Value', 'Reference', 'Component', 'ValueList', "
                             "'ExternalValueList'"
                             .format(value.__class__.__name__))
-        if not isinstance(units, basestring):
-            raise Exception("Units ({}) must be a string".format(units))
+        if not isinstance(units, Unit) and units is not None:
+            raise Exception("Units ({}) must of type <Unit>".format(units))
         self.value = value
         self.units = units
 
     def to_xml(self):
-        if isinstance(self.value, float):
+        if isinstance(self.value, (int, float)):
             value_element = E('SingleValue', str(self.value))
         else:
             value_element = self.value.to_xml()
-        kwargs = {'units': self.units} if self.units else {}
+        kwargs = {'units': self.units.name} if self.units else {}
         return E(self.element_name,
                  value_element,
                  **kwargs)
@@ -128,7 +128,12 @@ class Quantity(object):
                            "'{nm}ExternalArrayValue', '{nm}Reference' or "
                            "'{nm}Component'"
                            .format(tag=value_element.tag, nm=NINEML))
-        units = element.attrib.get('units')
+        units_str = element.attrib.get('units', None)
+        try:
+            units = context[units_str] if units_str else None
+        except KeyError:
+            raise Exception("Did not find definition of '{}' units in the "
+                            "current context.".format(units_str))
         return Quantity(value, units)
 
 
@@ -149,63 +154,12 @@ class StringValue(object):
         return element.text
 
 
-class InitialValue(BaseULObject):
+class InitialValue(Property):
 
     """
     temporary, longer-term plan is to use SEDML or something similar
     """
     element_name = "Initial"
-    defining_attributes = ("name", "value", "unit")
-
-    def __init__(self, name, value, unit=None):
-        self.name = name
-        if (not isinstance(value, (Number, list, RandomDistribution)) or
-            isinstance(value, bool)):
-            raise TypeError("Initial values may not be of type %s" %
-                            type(value))
-        self.value = value
-        self.unit = unit
-
-    def __repr__(self):
-        units = self.unit
-        if u"µ" in units:
-            units = units.replace(u"µ", "u")
-        return ("InitialValue(name=%s, value=%s, unit=%s)" %
-                (self.name, self.value, units))
-
-    def __eq__(self, other):
-        return isinstance(other, self.__class__) and \
-            reduce(and_, (self.name == other.name,
-                          self.value == other.value,
-                          self.unit == other.unit))  # FIXME: obviously we should resolve the units, so 0.001 V == 1 mV @IgnorePep8
-
-    def __hash__(self):
-        return hash(self.name) ^ hash(self.value) ^ hash(self.unit)
-
-    def is_random(self):
-        return isinstance(self.value, RandomDistribution)
-
-    def to_xml(self):
-        if isinstance(self.value, RandomDistribution):
-            value_element = E.prototype(self.value.name)
-        elif (isinstance(self.value, collections.Iterable) and
-              isinstance(self.value[0], Number)):
-            value_element = E.array(" ".join(repr(x) for x in self.value))
-        else:  # need to handle Function
-            value_element = E.scalar(repr(self.value))
-        return E(InitialValue.element_name,
-                 E.quantity(
-                 E.value(   # this extra level of tags is pointless, no?
-                 value_element,
-                 E.unit(self.unit or "dimensionless"))),
-                 name=self.name)
-
-    @classmethod
-    def from_xml(cls, element, context):
-        check_tag(element, cls)
-        qty = Quantity.from_xml(element.find(NINEML + "Quantity"), context)
-        return InitialValue(name=element.attrib["name"],
-                            value=qty.value, unit=qty.unit)
 
 
 class PropertySet(dict):
@@ -223,7 +177,7 @@ class PropertySet(dict):
         for prop in properties:
             self[prop.name] = prop  # should perhaps do a copy
         for name, (value, unit) in kwproperties.items():
-            self[name] = Property(name, value, unit)
+            self[name] = Property(name, Quantity(value, unit))
 
     def __hash__(self):
         return hash(tuple(self.items()))
@@ -266,7 +220,7 @@ class InitialValueSet(PropertySet):
         for iv in ivs:
             self[iv.name] = iv  # should perhaps do a copy
         for name, (value, unit) in kwivs.items():
-            self[name] = InitialValue(name, value, unit)
+            self[name] = InitialValue(name, Quantity(value, unit))
 
     def __repr__(self):
         return "InitialValueSet(%s)" % dict(self)
