@@ -17,18 +17,17 @@ class BaseComponentClass(object):
 
     element_name = 'ComponentClass'
 
-    #FIXME: Not sure if this works for dynamics class but definitely won't
-    #       for other classes.
     def to_xml(self):
-        return inspect.getmodule(self.__class__).writers.XMLWriter().\
-                                                                    visit(self)
+        exec('from nineml.abstraction_layer.{}.writers import XMLWriter'
+             .format(self.writer_name))
+        return XMLWriter().visit(self)  # @UndefinedVariable
 
     @classmethod
     def from_xml(cls, element, context):  # @UnusedVariable
         if element.find(NINEML + 'Dynamics') is not None:
             module_name = 'dynamics'
         elif element.find(NINEML + 'ConnectionRule') is not None:
-            module_name = 'connection_generator'
+            module_name = 'connectionrule'
         elif element.find(NINEML + 'RandomDistribution') is not None:
             module_name = 'random'
         exec('from nineml.abstraction_layer.{}.readers import XMLLoader'
