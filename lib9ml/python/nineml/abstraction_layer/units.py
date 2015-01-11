@@ -1,15 +1,21 @@
-from .. import E
+from ..base import E
+from .base import BaseALObject
+from nineml.base import annotate_xml, read_annotations
+from numpy.core.test_rational import numerator
 
 
-class Dimension(object):
+class Dimension(BaseALObject):
     """
     Defines the dimension used for quantity units
     """
 
     element_name = 'Dimension'
     valid_dims = ['m', 'l', 't', 'i', 'n', 'k', 'j']
+    SI_unit_conversion = {'m': 'Kg', 'l': 'm', 't': 's', 'i': 'A', 'n': 'mol',
+                          'k': 'K', 'j': 'cd'}
 
     def __init__(self, name, **kwargs):
+        super(Dimension, self).__init__()
         self.name = name
         for k in kwargs:
             if k not in self.valid_dims:
@@ -32,6 +38,22 @@ class Dimension(object):
     def power(self, dim_name):
         return self._dims.get(dim_name, 0)
 
+    def to_SI_units_str(self):
+        numer = '*'.join(('({}**{})'.format(self.SI_unit_conversion[n], p)
+                          if p > 1 else self.SI_unit_conversion[n])
+                         for n, p in self._dims.iteritems()
+                         if p > 0)
+        denom = '*'.join(('({}**{})'.format(self.SI_unit_conversion[n], p)
+                          if p > 1 else self.SI_unit_conversion[n])
+                         for n, p in self._dims.iteritems()
+                         if p < 0)
+        return '{}/({})'.format(numer, denom)
+
+    def accept_visitor(self, visitor, **kwargs):
+        """ |VISITATION| """
+        return visitor.visit_dimension(self, **kwargs)
+
+    @annotate_xml
     def to_xml(self):
         kwargs = {'name': self.name}
         kwargs.update(dict((k, str(v)) for k, v in self._dims.items()))
@@ -39,6 +61,7 @@ class Dimension(object):
                  **kwargs)
 
     @classmethod
+    @read_annotations
     def from_xml(cls, element, _):
         kwargs = dict(element.attrib)
         name = kwargs.pop('name')
@@ -46,14 +69,16 @@ class Dimension(object):
         return cls(name, **kwargs)
 
 
-class Unit(object):
+class Unit(BaseALObject):
     """
     Defines the units of a quantity
     """
 
     element_name = 'Unit'
+    defining_attributes = ('name', 'dimension', 'power', 'offset')
 
     def __init__(self, name, dimension, power, offset=0.0):
+        super(Unit, self).__init__()
         self.name = name
         self.dimension = dimension
         self.power = power
@@ -73,10 +98,18 @@ class Unit(object):
                         (", offset='{}'".format(self.offset)
                          if self.offset else '')))
 
+    def to_SI_units_str(self):
+        if self.offset != 0.0:
+            raise Exception("Cannot convert to SI unit string as offset is not"
+                            " zero ({})".format(self.offset))
+        return (self.dimension.to_SI_units_str() +
+                ' * 10**({})'.format(self.power) if self.power else '')
+
     @property
     def symbol(self):
         return self.name
 
+    @annotate_xml
     def to_xml(self):
         kwargs = {'symbol': self.name, 'dimension': self.dimension.name,
                   'power': str(self.power)}
@@ -86,10 +119,11 @@ class Unit(object):
                  **kwargs)
 
     @classmethod
+    @read_annotations
     def from_xml(cls, element, context):
         name = element.attrib['symbol']
         dimension = context[element.attrib['dimension']]
-        power = int(element.attrib['power'])
+        power = int(element.get('power', 0))
         offset = float(element.attrib.get('name', 0.0))
         return cls(name, dimension, power, offset)
 
